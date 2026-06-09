@@ -16,6 +16,10 @@ on:
   repository_dispatch:
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: main
@@ -111,7 +115,7 @@ jobs:
 
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
@@ -127,11 +131,11 @@ jobs:
 
     - name: Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
+        echo "OpenWrt firmware for ${{ github.sha }}" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
@@ -152,9 +156,44 @@ jobs:
 
     - name: Remove old Releases
       uses: dev-drprasad/delete-older-releases@master
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.tag.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       with:
         keep_latest: 3
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Notify Bark
+      id: notify_bark
+      if: always()
+      continue-on-error: true
+      env:
+        BARK_URL: ${{ secrets.BARK_URL }}
+        JOB_STATUS: ${{ job.status }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        if [ -z "$BARK_URL" ]; then
+          echo "BARK_URL secret is not set; skip Bark notification."
+          exit 0
+        fi
+
+        if [ "$JOB_STATUS" = "success" ]; then
+          title="OpenWrt Builder 成功"
+          result="成功"
+        else
+          title="OpenWrt Builder 失败"
+          result="失败"
+        fi
+
+        body=$(printf '运行结果: %s\n仓库: %s\n分支: %s\n运行: #%s\n链接: %s' \
+          "$result" \
+          "$GITHUB_REPOSITORY" \
+          "$GITHUB_REF_NAME" \
+          "$GITHUB_RUN_NUMBER" \
+          "$RUN_URL")
+
+        encode() {
+          python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+        }
+
+        curl -fsS --retry 3 "${BARK_URL}/$(encode "$title")/$(encode "$body")"
