@@ -29,3 +29,18 @@ if [ -f "$fibocom_qmi_driver" ] && ! grep -q 'static int qma_setting_store' "$fi
         exit 1
     }
 fi
+
+# Fix QModem Quectel driver builds on Linux 6.17+ where usbnet_bh is no
+# longer used but -Werror=unused-function is enabled.
+quectel_qmi_driver="feeds/qmodem/driver/quectel_QMI_WWAN/src/qmi_wwan_q.c"
+if [ -f "$quectel_qmi_driver" ] && ! grep -q 'static void __maybe_unused usbnet_bh' "$quectel_qmi_driver"; then
+    grep -q '^static void usbnet_bh(unsigned long data) {' "$quectel_qmi_driver" || {
+        echo "Failed to find usbnet_bh in $quectel_qmi_driver" >&2
+        exit 1
+    }
+    sed -i 's/^static void usbnet_bh(unsigned long data) {/static void __maybe_unused usbnet_bh(unsigned long data) {/' "$quectel_qmi_driver"
+    grep -q 'static void __maybe_unused usbnet_bh' "$quectel_qmi_driver" || {
+        echo "Failed to patch $quectel_qmi_driver for unused-function build error" >&2
+        exit 1
+    }
+fi
