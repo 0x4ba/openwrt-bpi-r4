@@ -44,3 +44,18 @@ if [ -f "$quectel_qmi_driver" ] && ! grep -q 'static void __maybe_unused usbnet_
         exit 1
     }
 fi
+
+# Fix QModem Simcom driver builds on newer OpenWrt kernels where
+# -Werror=missing-prototypes is enabled.
+simcom_qmi_driver="feeds/qmodem/driver/simcom_QMI_WWAN/src/qmi_wwan_s.c"
+if [ -f "$simcom_qmi_driver" ] && ! grep -q 'static struct sk_buff \*qmi_wwan_tx_fixup' "$simcom_qmi_driver"; then
+    grep -q '^struct sk_buff \*qmi_wwan_tx_fixup(struct usbnet \*dev, struct sk_buff \*skb, gfp_t flags)' "$simcom_qmi_driver" || {
+        echo "Failed to find qmi_wwan_tx_fixup in $simcom_qmi_driver" >&2
+        exit 1
+    }
+    sed -i 's/^struct sk_buff \*qmi_wwan_tx_fixup(struct usbnet \*dev, struct sk_buff \*skb, gfp_t flags)/static struct sk_buff *qmi_wwan_tx_fixup(struct usbnet *dev, struct sk_buff *skb, gfp_t flags)/' "$simcom_qmi_driver"
+    grep -q 'static struct sk_buff \*qmi_wwan_tx_fixup' "$simcom_qmi_driver" || {
+        echo "Failed to patch $simcom_qmi_driver for missing-prototypes build error" >&2
+        exit 1
+    }
+fi
