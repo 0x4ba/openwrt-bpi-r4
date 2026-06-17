@@ -60,6 +60,30 @@ if [ -f "$simcom_qmi_driver" ] && ! grep -q 'static struct sk_buff \*qmi_wwan_tx
 fi
 
 # =====================================================================
+# Make QModem default to ubus mode so it shares the TTY with
+# at-webserver instead of competing for direct serial access.
+# =====================================================================
+
+# luci-app-qmodem (classic)
+qmodem_lua="feeds/qmodem/luci/luci-app-qmodem/luasrc/model/cbi/qmodem/dial_config.lua"
+if [ -f "$qmodem_lua" ]; then
+    sed -i 's/use_ubus.default = "0"/use_ubus.default = "1"/' "$qmodem_lua"
+    grep -q 'use_ubus.default = "1"' "$qmodem_lua" 2>/dev/null && \
+        echo "QModem (classic): use_ubus defaults to 1"
+fi
+
+# luci-app-qmodem-next (JS)
+for jsfile in \
+    "feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/settings.js" \
+    "feeds/qmodem/luci/luci-app-qmodem-next/htdocs/luci-static/resources/view/qmodem/network_config.js"; do
+    if [ -f "$jsfile" ]; then
+        sed -i "s/o.default = '0'/o.default = '1'/" "$jsfile"
+        grep -q "o.default = '1'" "$jsfile" 2>/dev/null && \
+            echo "QModem (next): use_ubus defaults to 1 in $(basename $jsfile)"
+    fi
+done
+
+# =====================================================================
 # WiFi fix for BPI-R4 MT7925
 # =====================================================================
 # mac80211.sh wifi-detect generates country='00' which is an invalid
