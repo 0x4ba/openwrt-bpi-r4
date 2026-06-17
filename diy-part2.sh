@@ -8,7 +8,6 @@
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
-#
 
 # Modify default IP
 #sed -i 's/192.168.1.1/192.168.50.5/g' package/base-files/files/bin/config_generate
@@ -58,4 +57,20 @@ if [ -f "$simcom_qmi_driver" ] && ! grep -q 'static struct sk_buff \*qmi_wwan_tx
         echo "Failed to patch $simcom_qmi_driver for missing-prototypes build error" >&2
         exit 1
     }
+fi
+
+# =====================================================================
+# WiFi fix for BPI-R4 MT7925
+# =====================================================================
+# mac80211.sh wifi-detect generates country='00' which is an invalid
+# ISO 3166-1 code.  hostapd refuses to start with it, so the AP never
+# comes up.  Change the fallback to 'AU' (or any valid country code).
+
+mac80211_script="package/kernel/mac80211/files/lib/wifi/mac80211.sh"
+if [ -f "$mac80211_script" ] && ! grep -q "country='AU'" "$mac80211_script"; then
+    sed -i "s/country='00'/country='AU'/" "$mac80211_script"
+    if ! grep -q "country='AU'" "$mac80211_script"; then
+        sed -i 's/country="00"/country="AU"/' "$mac80211_script"
+    fi
+    echo "Patched $mac80211_script: country '00' -> 'AU'"
 fi
