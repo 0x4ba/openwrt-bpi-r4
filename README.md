@@ -1,5 +1,6 @@
 # Banana Pi R4 自用编译脚本
-Github Actions 使用参考 (./ACTIONS_README.md)
+Github Actions 使用参考 [ACTIONS_README](./ACTIONS_README.md)
+对比原版新增了 bark 编译结果推送
 
 # 路由器配置
 - BPI R4 4G 双SFP+
