@@ -86,15 +86,21 @@ done
 # =====================================================================
 # WiFi fix for BPI-R4 MT7925
 # =====================================================================
-# mac80211.sh wifi-detect generates country='00' which is an invalid
-# ISO 3166-1 code.  hostapd refuses to start with it, so the AP never
-# comes up.  Change the fallback to 'AU' (or any valid country code).
+# In OpenWrt main branch the wifi config script migrated from
+# mac80211.sh (shell) to mac80211.uc (ucode) in the wifi-scripts
+# package.  The ucode file hardcodes country = '00' for 6 GHz bands,
+# which is an invalid ISO 3166-1 code.  hostapd refuses to start with
+# it, so the AP never comes up.  Change the fallback to 'AU' (or any
+# valid country code).
 
-mac80211_script="package/kernel/mac80211/files/lib/wifi/mac80211.sh"
-if [ -f "$mac80211_script" ] && ! grep -q "country='AU'" "$mac80211_script"; then
-    sed -i "s/country='00'/country='AU'/" "$mac80211_script"
-    if ! grep -q "country='AU'" "$mac80211_script"; then
-        sed -i 's/country="00"/country="AU"/' "$mac80211_script"
+mac80211_uc="package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc"
+if [ -f "$mac80211_uc" ] && ! grep -q "country = 'AU'" "$mac80211_uc"; then
+    sed -i "s/country = '00'/country = 'AU'/" "$mac80211_uc"
+    if grep -q "country = 'AU'" "$mac80211_uc"; then
+        echo "Patched $mac80211_uc: country '00' -> 'AU'"
+    else
+        # Fallback: try double-quote variant
+        sed -i 's/country = "00"/country = "AU"/' "$mac80211_uc"
+        echo "Patched $mac80211_uc (double quotes): country '00' -> 'AU'"
     fi
-    echo "Patched $mac80211_script: country '00' -> 'AU'"
 fi
