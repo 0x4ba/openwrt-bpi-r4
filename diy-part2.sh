@@ -104,3 +104,72 @@ if [ -f "$mac80211_uc" ] && ! grep -q "country = 'AU'" "$mac80211_uc"; then
         echo "Patched $mac80211_uc (double quotes): country '00' -> 'AU'"
     fi
 fi
+
+# =====================================================================
+# Fix MT7925 firmware crash — download newer firmware from linux-firmware
+# =====================================================================
+# The built-in MT7925 firmware (Dec 2023) is incompatible with kernel 6.18+,
+# causing "Message 00020002 (seq N) timeout" when runtime-pm tries to wake
+# the card from deep sleep.  Download the latest firmware from the
+# linux-firmware repository to resolve compatibility.
+#
+# Ref: https://forum.openwrt.org/t/mt7925-crashes-in-ap-mode/231946
+# Ref: https://github.com/openwrt/mt76/issues/1036
+
+MTK_FW_DIR="package/kernel/mt76/src/firmware"
+FW_BASE_URL="https://raw.githubusercontent.com/openwrt-mirror/linux-firmware/main/mediatek/mt7925"
+if [ -d "$MTK_FW_DIR" ]; then
+    echo "Downloading updated MT7925 firmware from linux-firmware ..."
+    fw_ok=true
+
+    curl -sSL --retry 3 --connect-timeout 10 \
+        -o "$MTK_FW_DIR/WIFI_RAM_CODE_MT7925_1_1.bin" \
+        "$FW_BASE_URL/WIFI_RAM_CODE_MT7925_1_1.bin" || fw_ok=false
+
+    curl -sSL --retry 3 --connect-timeout 10 \
+        -o "$MTK_FW_DIR/WIFI_MT7925_PATCH_MCU_1_1_hdr.bin" \
+        "$FW_BASE_URL/WIFI_MT7925_PATCH_MCU_1_1_hdr.bin" || fw_ok=false
+
+    if $fw_ok; then
+        echo "OK: MT7925 firmware updated from linux-firmware"
+    else
+        echo "WARNING: Failed to download MT7925 firmware update (build continues with bundled firmware)"
+    fi
+else
+    echo "WARNING: $MTK_FW_DIR not found — cannot update MT7925 firmware"
+fi
+
+# =====================================================================
+# Disable MT7925 runtime-pm at boot — prevents firmware wake-up crash
+# =====================================================================
+# runtime-pm (runtime power management) puts the MT7925 into deep sleep
+# after a period of inactivity.  With old firmware, waking it causes a
+# "Message 00020002 timeout" that stalls the entire wireless stack.
+# This init script disables runtime-pm at boot as a safety measure.
+
+mkdir -p package/base-files/files/etc/init.d
+
+cat > package/base-files/files/etc/init.d/disable-mt7925-pm << 'PMEOF'
+#!/bin/sh /etc/rc.common
+
+START=99
+
+boot() {
+    start
+}
+
+reload() {
+    start
+}
+
+start() {
+    # Ensure debugfs is mounted
+    mount -t debugfs none /sys/kernel/debug 2>/dev/null || true
+    # Disable runtime-pm on every mt76 phy found
+    for d in /sys/kernel/debug/ieee80211/phy*/mt76; do
+        [ -f "$d/runtime-pm" ] && echo 0 > "$d/runtime-pm" 2>/dev/null
+    done
+}
+PMEOF
+chmod +x package/base-files/files/etc/init.d/disable-mt7925-pm
+echo "Created /etc/init.d/disable-mt7925-pm — disables mt76 runtime-pm at boot"
